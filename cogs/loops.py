@@ -70,9 +70,6 @@ class Loops(commands.Cog):
             async with session.get(url=url) as r:
                 response = await r.json()
         data = response
-        with open("bandata.json", "w") as f:
-            f.write(json.dumps(data, indent=4))
-
         return data
 
     async def processlist(self, banlist):
