@@ -27,10 +27,6 @@ class Loops(commands.Cog):
         await response.delete(delay=5)
         await ctx.message.delete(delay=5)
         self.banchecker.stop()
-
-    @commands.command()
-    async def setstatus(self, ctx):
-        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="a movie"))
         
     @tasks.loop(seconds=30)
     async def banchecker(self):
@@ -44,28 +40,86 @@ class Loops(commands.Cog):
         channel = self.client.get_channel(config["bans_channel"])
         
         for i in banList:
-            embedVar = discord.Embed(
-                title=f"{config['organization_name']}", color=0x00FF00
-            )
-            embedVar.add_field(
-                name="Player Information",
-                value=f"{banList[i]['playername']} - {banList[i]['steamid']}",
-                inline=False,
-            )
-            embedVar.add_field(
-                name="Ban Information",
-                value=f"Ban Length: {banList[i]['timestamp']} - Expires: {banList[i]['expires']} \n `{banList[i]['reason']}`",
-                inline=False,
-            )
-            embedVar.add_field(
-                name="Links",
-                value=f"Profile: [{banList[i]['steamid']}]({banList[i]['profileurl']})",
-                inline=False,
-            )
-            embedVar.set_thumbnail(url=banList[i]["avatar"])
-            embedVar.set_footer(text="Created by Gnomeslayer#5551")
+            embedVar = await self.defaultembed(banList[i], config['organization_name'])
             await channel.send(embed=embedVar)
 
+    async def defaultembed(self, bandata, orgname):
+        embedVar = discord.Embed(
+                title=f"{orgname}", color=0x00FF00
+            )
+        embedVar.add_field(
+            name="Player Information",
+            value=f"{bandata['playername']} - {bandata['steamid']}",
+            inline=False,
+        )
+        bantime = bandata["timestamp"].split("T")
+        embedVar.add_field(
+            name="Ban Information",
+            value=f"Ban Time: {bantime[0]} - Expires: {bandata['expires']} \n `{bandata['reason']}`",
+            inline=False,
+        )
+        if bandata['profileurl'] != 'Unknown':
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: [{bandata['steamid']}]({bandata['profileurl']})",
+                inline=False,
+            )
+        else:
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: {bandata['steamid']}",
+                inline=False,
+            )
+           
+        if bandata['avatar'] != 'Unknown':
+            embedVar.set_thumbnail(url=bandata["avatar"])
+        embedVar.set_footer(text="Created by Gnomeslayer#5551")
+        return embedVar
+    
+    async def gunnysembed(self, bandata, orgname):
+        embedVar = discord.Embed(
+                title=f"{orgname}", color=0x00FF00
+            )
+        embedVar.add_field(
+            name="Banned Player",
+            value=f"```{bandata['playername']} - {bandata['steamid']}```",
+            inline=False,
+        )
+            
+        embedVar.add_field(
+            name="Ban Information",
+            value=f"```{bandata['reason']} - Banning Admin {bandata['banner']}```",
+            inline=False,
+        )
+        bantime = bandata["timestamp"].split("T")
+        embedVar.add_field(
+            name="Date",
+            value=f"```{bantime[0]}```",
+            inline=True,
+        )
+        embedVar.add_field(
+            name="Length",
+            value=f"```{bandata['expires']}```",
+            inline=True
+        )
+        if bandata['profileurl'] != 'Unknown':
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: [{bandata['steamid']}]({bandata['profileurl']})",
+                inline=False,
+            )
+        else:
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: {bandata['steamid']}",
+                inline=False,
+            )
+            
+        if bandata['avatar'] != 'Unknown':
+            embedVar.set_thumbnail(url=bandata["avatar"])
+        embedVar.set_footer(text="Created by Gnomeslayer#5551")
+        return embedVar
+    
     async def getbanlist(self):
         with open("config.json", "r") as f:
             config = json.load(f)
@@ -89,46 +143,43 @@ class Loops(commands.Cog):
 
         for i in banlist["data"]:
             if i["type"] == "ban":
+                banid = i["id"]
+                playername = i["meta"]["player"]
+                timestamp = i["attributes"]["timestamp"]
+                expires = i["attributes"]["expires"]
+                reason = i["attributes"]["reason"]
+                note = i["attributes"]["note"]
+                bmid = i["attributes"]["identifiers"][0]["id"]
+                banner = "Autoban"
+                steamid = "unknown"
+                steamurl = "unknown"
+                avatar = "Unknown"
                 if i["relationships"].get("user"):
-                    newList[i["id"]] = {
-                        "banid": i["id"],
-                        "playername": i["meta"]["player"],
-                        "timestamp": i["attributes"]["timestamp"],
-                        "expires": i["attributes"]["expires"],
-                        "reason": i["attributes"]["reason"],
-                        "note": i["attributes"]["note"],
-                        "bmid": i["attributes"]["identifiers"][0]["id"],
-                        "steamid": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["steamid"],
-                        "avatar": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["avatarfull"],
-                        "profileurl": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["profileurl"],
-                        "banner": admins[i["relationships"]["user"]["data"]["id"]],
-                    }
-                else:
-                    newList[i["id"]] = {
-                        "banid": i["id"],
-                        "playername": i["meta"]["player"],
-                        "timestamp": i["attributes"]["timestamp"],
-                        "expires": i["attributes"]["expires"],
-                        "reason": i["attributes"]["reason"],
-                        "note": i["attributes"]["note"],
-                        "bmid": i["attributes"]["identifiers"][0]["id"],
-                        "steamid": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["steamid"],
-                        "avatar": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["avatarfull"],
-                        "profileurl": i["attributes"]["identifiers"][0]["metadata"][
-                            "profile"
-                        ]["profileurl"],
-                        "banner": "Auto Ban",
-                    }
+                    banner = admins[i["relationships"]["user"]["data"]["id"]]
+                if i['attributes']['identifiers'][0].get("metadata"):
+                    steamid = i["attributes"]["identifiers"][0]["metadata"][
+                            "profile"]["steamid"]
+                    steamurl = i["attributes"]["identifiers"][0]["metadata"][
+                        "profile"
+                    ]["profileurl"]
+                    avatar = i["attributes"]["identifiers"][0]["metadata"][
+                        "profile"
+                    ]["avatarfull"]
+                    
+                newList[i["id"]] = {
+                    "banid": banid,
+                    "playername": playername,
+                    "timestamp": timestamp,
+                    "expires": expires,
+                    "reason": reason,
+                    "note": note,
+                    "bmid": bmid,
+                    "steamid": steamid,
+                    "avatar": avatar,
+                    "profileurl": steamurl,
+                    "banner": banner,
+                }
+        
         return newList
 
     async def compareList(self, banlist):
