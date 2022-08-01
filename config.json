@@ -1,0 +1,10 @@
+{
+    "discord_token": "",
+    "battlemetrics_token": "",
+    "organization_id": 25433,
+    "organization_name": "Dubs Rust Servers",
+    "prefix": "!",
+    "bans_channel": 930455813007474688,
+    "pagesize": 10
+}
+
