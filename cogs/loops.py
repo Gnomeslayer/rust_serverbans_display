@@ -28,15 +28,21 @@ class Loops(commands.Cog):
         await ctx.message.delete(delay=5)
         self.banchecker.stop()
 
+    @commands.command()
+    async def setstatus(self, ctx):
+        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="a movie"))
+        
     @tasks.loop(seconds=30)
     async def banchecker(self):
         with open("config.json", "r") as f:
             config = json.load(f)
         banList = await self.getbanlist()
+        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{banList['meta']['total']} bans"))
         banList = await self.processlist(banList)
         banList = await self.compareList(banList)
         # The Embed
         channel = self.client.get_channel(config["bans_channel"])
+        
         for i in banList:
             embedVar = discord.Embed(
                 title=f"{config['organization_name']}", color=0x00FF00
@@ -70,11 +76,13 @@ class Loops(commands.Cog):
             async with session.get(url=url) as r:
                 response = await r.json()
         data = response
+
         return data
 
     async def processlist(self, banlist):
         newList = {}
         admins = {}
+        
         for i in banlist["included"]:
             if i["type"] == "user":
                 admins[i["attributes"]["id"]] = i["attributes"]["nickname"]
