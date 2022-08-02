@@ -187,7 +187,7 @@ class Loops(commands.Cog):
         for i in banlist:
             if i not in self.BanListCache:
                 newList[i] = banlist[i]
-                self.BanListCache.append(i)
+        self.BanListCache = banlist
         return newList
 
 
