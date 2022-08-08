@@ -5,6 +5,7 @@
     "organization_name": "Dubs Rust Servers",
     "prefix": "!",
     "bans_channel": 930455813007474688,
-    "pagesize": 10
+    "error_channel": 1005354659222925412,
+    "pagesize": 10,
+    "first_run_spam": false
 }
-
