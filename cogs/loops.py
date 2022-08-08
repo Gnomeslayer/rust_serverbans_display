@@ -183,7 +183,7 @@ class Loops(commands.Cog):
                 expires = i["attributes"]["expires"]
                 reason = i["attributes"]["reason"]
                 note = i["attributes"]["note"]
-                bmid = ["id"]
+                bmid = i["id"]
                 banner = "Autoban"
                 steamid = "unknown"
                 steamurl = "unknown"
