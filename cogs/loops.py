@@ -2,6 +2,7 @@ import json, http3, discord
 import aiohttp
 from discord.ext import commands, tasks
 from discord.utils import get
+import traceback
 
 HTTP = http3.AsyncClient()
 
@@ -11,7 +12,30 @@ class Loops(commands.Cog):
         print("[Cog] Loops has been initiated")
         self.client = client
         self.BanListCache = []
+        self.totalbans = 0
 
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            
+        commandname = str(ctx.command)
+        commandauthor = ctx.author
+        channel = self.client.get_channel(config["error_channel"])
+        tb = traceback.format_exception(type(error), error, error.__traceback__)
+        commandrun = ""
+        for i in tb:
+            commandrun += f"{i}"
+        with open("error_log.txt", "w") as f:
+            f.write(commandrun)
+        with open("error_log.txt", "rb") as f:
+            await channel.send(
+                content=f"Command Name: {commandname}, Author: {commandauthor}",
+                file=discord.File(f, filename="error_log.txt"),
+            )
+    
+    
+    
     @commands.command()
     @commands.is_owner()
     async def startloop(self, ctx):
@@ -19,6 +43,7 @@ class Loops(commands.Cog):
         await response.delete(delay=5)
         await ctx.message.delete(delay=5)
         await self.banchecker.start()
+        await self.statusupdater.start()
 
     @commands.command()
     @commands.is_owner()
@@ -27,15 +52,22 @@ class Loops(commands.Cog):
         await response.delete(delay=5)
         await ctx.message.delete(delay=5)
         self.banchecker.stop()
+        self.statusupdater.stop()
+    
+    @tasks.loop(seconds=300)
+    async def statusupdater(self):
+        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{self.totalbans} bans"))
         
     @tasks.loop(seconds=30)
     async def banchecker(self):
         with open("config.json", "r") as f:
             config = json.load(f)
         banList = await self.getbanlist()
-        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{banList['meta']['total']} bans"))
+        if not self.BanListCache:
+            await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{banList['meta']['total']} bans"))
+        self.totalbans = banList['meta']['total']
         banList = await self.processlist(banList)
-        banList = await self.compareList(banList)
+        banList = await self.compareList(banList, config['first_run_spam'])
         # The Embed
         channel = self.client.get_channel(config["bans_channel"])
         
@@ -136,6 +168,7 @@ class Loops(commands.Cog):
     async def processlist(self, banlist):
         newList = {}
         admins = {}
+        playername = 'Unknown'
         
         for i in banlist["included"]:
             if i["type"] == "user":
@@ -144,19 +177,22 @@ class Loops(commands.Cog):
         for i in banlist["data"]:
             if i["type"] == "ban":
                 banid = i["id"]
-                playername = i["meta"]["player"]
+                if i.get('meta') and i['meta'].get('player'):
+                    playername = i["meta"]["player"]
                 timestamp = i["attributes"]["timestamp"]
                 expires = i["attributes"]["expires"]
                 reason = i["attributes"]["reason"]
                 note = i["attributes"]["note"]
-                bmid = i["attributes"]["identifiers"][0]["id"]
+                bmid = ["id"]
                 banner = "Autoban"
                 steamid = "unknown"
                 steamurl = "unknown"
                 avatar = "Unknown"
                 if i["relationships"].get("user"):
                     banner = admins[i["relationships"]["user"]["data"]["id"]]
-                if i['attributes']['identifiers'][0].get("metadata"):
+                if i['attributes'].get('identifiers') and i['attributes']['identifiers'][0].get("metadata"):
+                    if playername == 'Unknown':
+                        playername = i['attrbiutes']['identifiers'][0]['metadata']['profile']['personaname']
                     steamid = i["attributes"]["identifiers"][0]["metadata"][
                             "profile"]["steamid"]
                     steamurl = i["attributes"]["identifiers"][0]["metadata"][
@@ -182,8 +218,12 @@ class Loops(commands.Cog):
         
         return newList
 
-    async def compareList(self, banlist):
+    async def compareList(self, banlist, firstrunspam):
         newList = {}
+        if not firstrunspam:
+            if len(self.BanListCache) == 0:
+                self.BanListCache = banlist
+                
         for i in banlist:
             if i not in self.BanListCache:
                 newList[i] = banlist[i]
