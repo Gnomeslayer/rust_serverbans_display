@@ -1,11 +1,13 @@
-# rust_serverbans_display
-Whenever a ban is made on the target organization it will display them in the target channel on discord.
-
-To start the bot, the owner of the bot must type !startloop and to stop the bot, the owner of the bot must type !stoploop
+# Gnomes Rustbans Bot
+The rustbans bot periodically checks for any new bans that have been made in the last 30 seconds and sends them to a targeted channel.
 
 
-Update the config file with the appropriate data.
+The bot requires several API keys to begin functioning.
+--------------------------
+Discord_token - https://discord.com/developers/docs/intro / https://discord.com/developers/applications <br />
+battlemetrics_token - https://www.battlemetrics.com/developers <br />
+Steam API - https://steamcommunity.com/dev <br />
 
-Contact Gnomeslayer#5551 if you require assistance in setting up the bot.
-
-Example output: https://imgur.com/a/NT7ZXRe
+Additional information the bot requires.
+--------------------------
+Application ID - This is the ID of the bot itself. https://discord.com/developers/applications <br />
