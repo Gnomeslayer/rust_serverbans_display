@@ -1,22 +1,18 @@
-import json, http3, discord
+import json, discord
 import aiohttp
 from discord.ext import commands, tasks
 from discord.utils import get
 import traceback
 
-HTTP = http3.AsyncClient()
 
-
-class BanReporter_admin(commands.Cog):
+class Loops(commands.Cog):
     def __init__(self, client):
-        print("[Cog] BanReporter has been initiated")
+        print("[Cog] Loops has been initiated")
         self.client = client
-        self.BanListCache = {}
+        self.BanListCache = []
         self.totalbans = 0
-        with open("./json/config.json", "r") as f:
-            config = json.load(f)
-        self.config = config
         self.banchecker.start()
+        self.statusupdater.start()
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -37,72 +33,39 @@ class BanReporter_admin(commands.Cog):
                 content=f"Command Name: {commandname}, Author: {commandauthor}",
                 file=discord.File(f, filename="error_log.txt"),
             )
-      
+    
+    @tasks.loop(seconds=300)
+    async def statusupdater(self):
+        await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{self.totalbans} bans"))
+
+    @statusupdater.before_loop
+    async def statusupdater_wait(self):
+        await self.client.wait_until_ready()
+        
     @tasks.loop(seconds=30)
     async def banchecker(self):
-        servers = ''
-        with open('./json/servercfg.json', 'r') as f:
-            servers = json.load(f)
+        with open("./json/config.json", "r") as f:
+            config = json.load(f)
+        banList = await self.getbanlist()
+        if not self.BanListCache:
+            await self.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{banList['meta']['total']} bans"))
+        self.totalbans = banList['meta']['total']
+        banList = await self.processlist(banList)
+        banList = await self.compareList(banList, config['first_run_spam'])
+        # The Embed
+        channel = self.client.get_channel(config["bans_channel"])
         
-        for server in servers:
-            banList = await self.getbanlist(server['orgid'], server['pagesize'])
-            self.totalbans = banList['meta']['total']
-            banList = await self.processlist(banList)
-            banList = await self.compareList(server['orgid'], banList, self.config['first_run_spam'])
-            # The Embed
-            PublicChannel = self.client.get_channel(server['PublicChannel'])
-            PrivateChannel = self.client.get_channel(server['PrivateChannel'])
-            
-            for i in banList:
-                PublicEmbed = await self.PublicView(bandata=banList[i], orgname=server['name'], color=server['color'], logo=server['logo'])
-                PrivateEmbed = await self.PrivateView(bandata=banList[i], orgname=server['name'], color=server['color'], logo=server['logo'])
-                await PublicChannel.send(embed=PublicEmbed)
-                await PrivateChannel.send(embed=PrivateEmbed)
+        for i in banList:
+            embedVar = await self.defaultembed(banList[i], config['organization_name'])
+            await channel.send(embed=embedVar)
 
     @banchecker.before_loop
-    async def banchecker_wait_for_ready(self):
+    async def banchecker_wait(self):
         await self.client.wait_until_ready()
-    
-    async def PrivateView(self, bandata, orgname, color, logo):
-        embedVar = discord.Embed(
-                title=f"{orgname}", color=int(color, base=16)
-            )
-        embedVar.add_field(
-            name="Player Information",
-            value=f"{bandata['playername']} - {bandata['steamid']}",
-            inline=False,
-        )
-        bantime = bandata["timestamp"].split("T")
-        embedVar.add_field(
-            name="Ban Information",
-            value=f"Ban Time: {bantime[0]}\nExpires: {bandata['expires']} \n ```{bandata['reason']}```",
-            inline=False,
-        )
-        if bandata['profileurl'] != 'Unknown':
-            embedVar.add_field(
-                name="Links",
-                value=f"Profile: [{bandata['steamid']}]({bandata['profileurl']})\nBattlemetrics: [Profile](https://www.battlemetrics.com/rcon/players/{bandata['bmid']})\nNote: [Battlemetrics note](https://www.battlemetrics.com/rcon/bans/edit/{bandata['banid']})",
-                inline=False,
-            )
-        else:
-            embedVar.add_field(
-                name="Links",
-                value=f"Profile: {bandata['steamid']}",
-                inline=False,
-            )
         
-        if not bandata['note']:
-            embedVar.add_field(name="Note", value=f"```No note was submitted```", inline=False)
-        else:
-            embedVar.add_field(name="Note", value=f"```{bandata['note']}```", inline=False)
-            
-        embedVar.set_thumbnail(url=logo)
-        embedVar.set_footer(text="Developed by Gnomeslayer#5551")
-        return embedVar
-    
-    async def PublicView(self, bandata, orgname, color, logo):
+    async def defaultembed(self, bandata, orgname):
         embedVar = discord.Embed(
-                title=f"{orgname}", color=int(color, base=16)
+                title=f"{orgname}", color=0x00FF00
             )
         embedVar.add_field(
             name="Player Information",
@@ -112,7 +75,7 @@ class BanReporter_admin(commands.Cog):
         bantime = bandata["timestamp"].split("T")
         embedVar.add_field(
             name="Ban Information",
-            value=f"Ban Time: {bantime[0]}\nExpires: {bandata['expires']} \n ```{bandata['reason']}```",
+            value=f"Ban Time: {bantime[0]} - Expires: {bandata['expires']} \n `{bandata['reason']}`",
             inline=False,
         )
         if bandata['profileurl'] != 'Unknown':
@@ -127,27 +90,75 @@ class BanReporter_admin(commands.Cog):
                 value=f"Profile: {bandata['steamid']}",
                 inline=False,
             )
-            
-        embedVar.set_thumbnail(url=logo)
-        embedVar.set_footer(text="Developed by Gnomeslayer#5551")
+           
+        if bandata['avatar'] != 'Unknown':
+            embedVar.set_thumbnail(url=bandata["avatar"])
+        embedVar.set_footer(text="Created by Gnomeslayer#5551")
         return embedVar
     
-    async def getbanlist(self, orgid, pagesize):
+    
+    async def gunnysembed(self, bandata, orgname):
+        embedVar = discord.Embed(
+                title=f"{orgname}", color=0x00FF00
+            )
+        embedVar.add_field(
+            name="Banned Player",
+            value=f"```{bandata['playername']} - {bandata['steamid']}```",
+            inline=False,
+        )
+            
+        embedVar.add_field(
+            name="Ban Information",
+            value=f"```{bandata['reason']} - Banning Admin {bandata['banner']}```",
+            inline=False,
+        )
+        bantime = bandata["timestamp"].split("T")
+        embedVar.add_field(
+            name="Date",
+            value=f"```{bantime[0]}```",
+            inline=True,
+        )
+        embedVar.add_field(
+            name="Length",
+            value=f"```{bandata['expires']}```",
+            inline=True
+        )
+        if bandata['profileurl'] != 'Unknown':
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: [{bandata['steamid']}]({bandata['profileurl']})",
+                inline=False,
+            )
+        else:
+            embedVar.add_field(
+                name="Links",
+                value=f"Profile: {bandata['steamid']}",
+                inline=False,
+            )
+            
+        if bandata['avatar'] != 'Unknown':
+            embedVar.set_thumbnail(url=bandata["avatar"])
+        embedVar.set_footer(text="Created by Gnomeslayer#5551")
+        return embedVar
+    
+    async def getbanlist(self):
         with open("./json/config.json", "r") as f:
             config = json.load(f)
         bmtoken = f'Bearer {config["battlemetrics_token"]}'
-        url = f"https://api.battlemetrics.com/bans?filter[organization]={orgid}&include=user,server&page[size]={pagesize}"
+        url = f"https://api.battlemetrics.com/bans?filter[organization]={config['organization_id']}&include=user,server&page[size]={config['pagesize']}"
         response = ""
         async with aiohttp.ClientSession(headers={"Authorization": bmtoken}) as session:
             async with session.get(url=url) as r:
                 response = await r.json()
         data = response
+
         return data
 
     async def processlist(self, banlist):
         newList = {}
         admins = {}
         playername = 'Unknown'
+        
         for i in banlist["included"]:
             if i["type"] == "user":
                 admins[i["attributes"]["id"]] = i["attributes"]["nickname"]
@@ -196,25 +207,18 @@ class BanReporter_admin(commands.Cog):
         
         return newList
 
-    async def compareList(self, orgid, banlist, firstrunspam):
+    async def compareList(self, banlist, firstrunspam):
         newList = {}
-        
-        if orgid not in self.BanListCache:
-            self.BanListCache[orgid] = []
-        
-        if not firstrunspam and not self.BanListCache[orgid]:
-            for i in banlist:
-                self.BanListCache[orgid].append(i)
+        if not firstrunspam:
+            if len(self.BanListCache) == 0:
+                self.BanListCache = banlist
+                
         for i in banlist:
-            if i not in self.BanListCache[orgid]:
+            if i not in self.BanListCache:
                 newList[i] = banlist[i]
-                if len(self.BanListCache) > 100:
-                    self.BanListCache[orgid][0] = i
-                    self.BanListCache[orgid].pop()
-                else:
-                    self.BanListCache[orgid].append(i)
+        self.BanListCache = banlist
         return newList
 
 
 async def setup(client):
-    await client.add_cog(BanReporter_admin(client))
+    await client.add_cog(Loops(client))
